@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # Nombre del archivo con fecha y hora
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-    filePath = "test/ledgers/test_2.ledger"
+    filePath = "test/ledgers/test_3.ledger"
     output_path = os.path.join(
         output_dir, f"output_{filePath.split("/")[2]}_{timestamp}.md"
     )
@@ -46,18 +46,28 @@ if __name__ == "__main__":
     }
 
     parser = LedgerParser(
-        file_path=filePath,
-        file_accounts_path=filePath,
+        file=filePath,
+        file_accounts=filePath,
         parents_accounts=other_parents,
     )
     visual = LedgerVisual()
     grafics = LedgerGrafics()
 
     # Parse the transactions and accounts
-    transactions_json = parser.parse()
+    transactions_json = parser.parse_transactions()
+    parents = parser.detected_parents_accounts()
     accounts_list = parser.parse_accounts()
     accounts_advance = parser.parse_accounts_advance()
     metadata = parser.parse_metadata()
+    metadata_yaml = parser.parse_metadata_yaml()
+    map_doc = parser.parse_doc()
+    resolved_transactions = parser.resolve(
+        transactions_json,
+        {
+            "IVA": {"percentage": 0.16, "account": "Taxes:IVA"},
+            "RET_ISR": {"percentage": 0.10, "account": "Taxes:RET_ISR"},
+        },
+    )
 
     analyst = LedgerAnalyst(
         transactions=transactions_json,
@@ -117,6 +127,8 @@ if __name__ == "__main__":
         f.write("\n---\n\n")
         # f.write(f"\nArchivo fuente: `test_2.ledger`\n")
 
+        f.write(f"# Reporte generado el {now.strftime('%Y-%m-%d %H:%M:%S')}\n")
+
         # ---------- LedgerParser ----------
         write_class_header(f, "LedgerParser")
 
@@ -125,6 +137,18 @@ if __name__ == "__main__":
             "parse()",
             "Convierte las transacciones del archivo ledger a estructura JSON.",
             parser.to_json(transactions_json),
+        )
+        write_section(
+            f,
+            "resolve()",
+            "Lista de transacciones.",
+            parser.to_json(resolved_transactions),
+        )
+        write_section(
+            f,
+            "detected_parents_accounts()",
+            "Lista de cuentas padres.",
+            parser.to_json(parents),
         )
         write_section(
             f,
@@ -175,6 +199,20 @@ if __name__ == "__main__":
             "parse_metadata()",
             "Metadatos del archivo.",
             parser.to_json(metadata),
+        )
+
+        write_section(
+            f,
+            "parse_metadata_yaml()",
+            "Metadatos del archivo en formato YAML.",
+            parser.to_json(metadata_yaml),
+        )
+
+        write_section(
+            f,
+            "parse_map()",
+            "Mapa de cuentas.",
+            parser.to_json(map_doc),
         )
 
         # ---------- LedgerAnalyst ----------
