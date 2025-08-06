@@ -31,7 +31,7 @@ if __name__ == "__main__":
     # Nombre del archivo con fecha y hora
     now = datetime.now()
     timestamp = now.strftime("%Y-%m-%d_%H-%M-%S")
-    filePath = "test/ledgers/test_3.ledger"
+    filePath = "test/ledgers/test_4.ledger"
     output_path = os.path.join(
         output_dir, f"output_{filePath.split("/")[2]}_{timestamp}.md"
     )

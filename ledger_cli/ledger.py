@@ -422,51 +422,35 @@ class LedgerParser:
         # Extraer impuestos si existen
         line, taxes = self._extract_taxes(line)
 
-        unit = None
-        amount = None
+        # Divide entre nombre de cuenta y monto por la última ocurrencia de espacio
+        parts = line.rsplit(" ", 1)
 
-        patterns = [
-            # account    CUR  AMOUNT   o   AMOUNT CUR
-            r"""^([A-Za-z0-9: ]+)\s+
-                (?:
-                    ([A-Z]{2,5}|\$)\s+(-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)
-                    |
-                    (-?\d{1,3}(?:,\d{3})*(?:\.\d+)?)\s+([A-Z]{2,5}|\$)
-                )$""",
-            r"^([A-Za-z0-9: ]+)\s+([A-Z]{2,5}|\$)?\s*(-?\$?\d+(?:\.\d+)?)$",
-            r"^([A-Za-z0-9: ]+)$",
-        ]
-
-        account_match = None
-        for pattern in patterns:
-            account_match = re.match(pattern, line, re.VERBOSE)
-            if account_match:
-                break
-
-        if not account_match:
-            return None, last_amount, last_unit
-
-        account_name = account_match.group(1).strip()
-        group_count = account_match.lastindex or 0
-
-        if group_count >= 3 and account_match.group(2) and account_match.group(3):
-            unit = account_match.group(2)
-            amount = account_match.group(3)
-        elif group_count >= 5 and account_match.group(4) and account_match.group(5):
-            amount = account_match.group(4)
-            unit = account_match.group(5)
-        elif group_count >= 2:
-            unit = account_match.group(2)
-            amount = account_match.group(3)
-        elif group_count == 1:
+        if len(parts) < 2:
+            # Solo cuenta, sin monto
+            account_name = parts[0].strip()
             amount = -abs(last_amount) if last_amount is not None else 0.0
-            unit = last_unit
+            unit = last_unit or "N/A"
+        else:
+            account_name = parts[0].strip()
+            amount_part = parts[1].strip()
 
-        amount = float(str(amount).replace(",", "").replace("$", "")) if amount else 0.0
-        unit = unit.replace(" ", "") if unit else "N/A"
-        account_name = account_name.replace(" ", "")
-        sub_accounts = account_name.split(":")
+            # Extraer unidad y monto
+            match = re.match(r"^\$?-?[\d,]+(?:\.\d+)?$", amount_part)
+            if not match:
+                return None, last_amount, last_unit
 
+            amount_str = amount_part.replace(",", "").replace("$", "")
+            try:
+                amount = float(amount_str)
+            except ValueError:
+                return None, last_amount, last_unit
+
+            unit = "$" if "$" in amount_part else "N/A"
+
+        account_name = account_name.replace("  ", " ")
+        sub_accounts = [s.strip() for s in account_name.split(":")]
+
+        # Guardar últimos
         last_amount = amount
         last_unit = unit
 
@@ -499,31 +483,28 @@ class LedgerParser:
             line = line.strip()
 
             if self._is_comment_or_empty(line):
-                if current_transaction:
-                    transactions.append(current_transaction)
-                    current_transaction = None
-                continue
+                continue  # ya no cerramos la transacción aquí
 
             if self._is_transaction_header(line):
+                if current_transaction:
+                    transactions.append(current_transaction)
                 current_transaction = self._parse_transaction_header(line)
-                # Añadimos espacio para propiedades personalizadas
                 current_transaction["properties"] = []
                 continue
 
             if current_transaction:
-                # Intentar extraer propiedad
                 prop = self._extract_property_line(line)
                 if prop:
                     current_transaction["properties"].append(prop)
-                    continue  # Ya fue procesado como propiedad
+                    continue
 
-                # Parsear línea de cuenta
                 account_entry, last_amount, last_unit = self._parse_account_line(
                     line, last_amount, last_unit
                 )
                 if account_entry:
                     current_transaction["accounts"].append(account_entry)
 
+        # fuera del bucle
         if current_transaction:
             transactions.append(current_transaction)
 
@@ -863,13 +844,15 @@ class LedgerParser:
             transaction["accounts"], tax_definitions, fallback_counterpart
         )
         return transaction
-    
+
     def _build_tax_account_name(self, tax_definitions: dict, name: str) -> str:
         """
         Construye el nombre de la cuenta de impuesto a partir de la definición de impuestos.
         """
         tax_info = tax_definitions.get(name, {})
-        account = tax_info.get("account", self.parents_accounts["Assets"] + ":Taxes:" + name)
+        account = tax_info.get(
+            "account", self.parents_accounts["Assets"] + ":Taxes:" + name
+        )
         if not account:
             raise ValueError(f"No se ha definido la cuenta de impuesto para {name}")
         return account
@@ -929,11 +912,11 @@ class LedgerParser:
                     )
                     if counterpart_index is None:
                         continue  # No contrapartida válida encontrada
-                    
+
                     counterpart = result_accounts[counterpart_index]
                     counterpart_sign = 1 if counterpart["amount"] >= 0 else -1
                     counterpart["amount"] += counterpart_sign * tax_amount
-                
+
                     # Agrega cuenta de impuesto
                     result_accounts.append(
                         {
@@ -944,7 +927,6 @@ class LedgerParser:
                             "taxes": [],
                         }
                     )
-
 
         return result_accounts
 
