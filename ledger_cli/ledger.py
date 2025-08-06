@@ -863,6 +863,16 @@ class LedgerParser:
             transaction["accounts"], tax_definitions, fallback_counterpart
         )
         return transaction
+    
+    def _build_tax_account_name(self, tax_definitions: dict, name: str) -> str:
+        """
+        Construye el nombre de la cuenta de impuesto a partir de la definición de impuestos.
+        """
+        tax_info = tax_definitions.get(name, {})
+        account = tax_info.get("account", self.parents_accounts["Assets"] + ":Taxes:" + name)
+        if not account:
+            raise ValueError(f"No se ha definido la cuenta de impuesto para {name}")
+        return account
 
     def _resolve_accounts_taxes(
         self, accounts: list, tax_definitions: dict, fallback_counterpart: str = None
@@ -886,7 +896,7 @@ class LedgerParser:
 
                 tax_info = tax_definitions.get(name, {})
                 percentage = tax_info.get("percentage", 0.0)
-                tax_account_name = tax_info.get("account", "Taxes")
+                tax_account_name = self._build_tax_account_name(tax_definitions, name)
 
                 # Calcula el monto del impuesto
                 tax_amount = round(abs(base_amount) * percentage, 2)

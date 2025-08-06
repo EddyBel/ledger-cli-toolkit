@@ -64,8 +64,8 @@ if __name__ == "__main__":
     resolved_transactions = parser.resolve(
         transactions_json,
         {
-            "IVA": {"percentage": 0.16, "account": "Taxes:IVA"},
-            "RET_ISR": {"percentage": 0.10, "account": "Taxes:RET_ISR"},
+            "IVA": {"percentage": 0.16},
+            "RET_ISR": {"percentage": 0.10},
         },
     )
 
