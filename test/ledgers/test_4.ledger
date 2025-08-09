@@ -78,7 +78,7 @@ account Expenses:Shopping
   -tags: salary 
 
 2025-01-20 * Grocery Shopping
-  Expenses:Food:Groceries           $250.00
+  Expenses:Food:Groceries           $100.00 +{IVA} 
   Assets:Bank:Checking
 
 2025-01-22 * Rent Payment

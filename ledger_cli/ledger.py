@@ -512,57 +512,111 @@ class LedgerParser:
 
     def parse_doc(self) -> List[Dict[str, Union[int, List[int], str, List[str]]]]:
         """
-        Retorna un mapa del documento agrupando líneas individuales y transacciones completas.
+        Retorna un mapa del documento agrupando:
+          - Transacciones completas
+          - Comentarios multilinea
+          - Bloques de metadatos
+          - Títulos estilo markdown (# y ##)
+          - Líneas individuales restantes
         """
         content = self._get_content()
         lines = content.splitlines()
         result = []
 
         inside_transaction = False
-        transaction_block = {"type": "transaction", "index": [], "lines": []}
+        inside_comment_block = False
+        inside_metadata_block = False
 
-        for idx, line in enumerate(lines):
-            raw_line = line  # Línea original sin modificar
-            line = line.strip()
+        current_block = None
 
+        def close_block():
+            nonlocal current_block
+            if current_block:
+                result.append(current_block)
+                current_block = None
+
+        for idx, raw_line in enumerate(lines):
+            line = raw_line.strip()
+
+            # --- Detectar metadatos ---
+            if line == "---":
+                if not inside_metadata_block:
+                    # Abrimos bloque de metadatos
+                    close_block()
+                    inside_metadata_block = True
+                    current_block = {"type": "metadata", "index": [idx], "lines": [raw_line]}
+                else:
+                    # Cerramos bloque de metadatos
+                    current_block["index"].append(idx)
+                    current_block["lines"].append(raw_line)
+                    inside_metadata_block = False
+                    close_block()
+                continue
+
+            if inside_metadata_block:
+                current_block["index"].append(idx)
+                current_block["lines"].append(raw_line)
+                continue
+
+            # --- Detectar transacciones ---
             if self._is_transaction_header(line):
-                # Si ya estábamos en una transacción, la cerramos
-                if inside_transaction:
-                    result.append(transaction_block)
-                    transaction_block = {
-                        "type": "transaction",
-                        "index": [],
-                        "lines": [],
-                    }
-
+                close_block()
                 inside_transaction = True
-                transaction_block["index"].append(idx)
-                transaction_block["lines"].append(raw_line)
+                current_block = {"type": "transaction", "index": [idx], "lines": [raw_line]}
                 continue
 
             if inside_transaction:
-                if not line and transaction_block["lines"]:
-                    # Fin de transacción por línea vacía
-                    result.append(transaction_block)
-                    transaction_block = {
-                        "type": "transaction",
-                        "index": [],
-                        "lines": [],
-                    }
+                if not line:  # línea vacía → fin de transacción
                     inside_transaction = False
+                    close_block()
                 else:
-                    # Continúa la transacción
-                    transaction_block["index"].append(idx)
-                    transaction_block["lines"].append(raw_line)
-            else:
-                # Línea fuera de transacción (comentario, vacío, encabezado, etc.)
-                result.append({"type": "line", "index": idx, "line": raw_line})
+                    current_block["index"].append(idx)
+                    current_block["lines"].append(raw_line)
+                continue
 
-        # Si quedó una transacción abierta al final del archivo
-        if inside_transaction and transaction_block["lines"]:
-            result.append(transaction_block)
+            # --- Detectar comentarios multilinea ---
+            if line.startswith(";"):
+                if not inside_comment_block:
+                    close_block()
+                    inside_comment_block = True
+                    current_block = {"type": "comment", "index": [idx], "lines": [raw_line]}
+                else:
+                    current_block["index"].append(idx)
+                    current_block["lines"].append(raw_line)
+                continue
+            else:
+                if inside_comment_block:
+                    inside_comment_block = False
+                    close_block()
+
+            # --- Detectar títulos estilo markdown ---
+            if line.startswith("####"):
+                close_block()
+                result.append({"type": "title4", "index": idx, "line": raw_line})
+                continue
+            elif line.startswith("###"):
+                close_block()
+                result.append({"type": "title3", "index": idx, "line": raw_line})
+                continue
+            elif line.startswith("##"):
+                close_block()
+                result.append({"type": "title2", "index": idx, "line": raw_line})
+                continue
+            elif line.startswith("#"):
+                close_block()
+                result.append({"type": "title1", "index": idx, "line": raw_line})
+                continue
+            
+
+            # --- Si no es ninguno de los anteriores, es una línea normal ---
+            close_block()
+            result.append({"type": "line", "index": idx, "line": raw_line})
+
+        # Cerrar bloque abierto al final
+        close_block()
 
         return result
+
 
     def parse_accounts(self) -> List[str]:
         """
